@@ -3,7 +3,7 @@
 	<Information>
 		<Name>StatsExporter</Name>
 		<Author>DarkLink</Author>
-		<Version>1.0.0</Version>
+		<Version>0.0.1</Version>
 		<Description>
 			Saves a JSON file with the stats of your character.
 		</Description>

@@ -1,4 +1,4 @@
-# lotro_statsexporter
+# darklink-lotro-plugins
 
 A collection of plugins for
 [The Lord of the Rings Online](https://www.lotro.com), written against the
