@@ -1,12 +1,16 @@
-# StatsExporter
+# lotro_statsexporter
 
-A plugin for [The Lord of the Rings Online](https://www.lotro.com) that exports
-your character's combat statistics (and, in progress, items) to JSON files via
-the game's Turbine/Lua API.
+A collection of plugins for
+[The Lord of the Rings Online](https://www.lotro.com), written against the
+game's Turbine/Lua API.
 
-## What it does
+## Plugins
 
-The plugin shows a floating window ("Character Stats Exporter") with buttons to:
+### StatsExporter
+
+Exports your character's combat statistics (and, in progress, items) to JSON
+files via `Turbine.PluginData.Save`. Shows a floating window
+("Character Stats Exporter") with buttons to:
 
 - **Export Character Stats to File** — collects class, level, morale, power,
   armour, the five attributes (Might, Agility, Vitality, Will, Fate),
@@ -18,8 +22,13 @@ The plugin shows a floating window ("Character Stats Exporter") with buttons to:
 
 ## Project layout
 
-- `StatsExporter.plugin` — plugin manifest (name, author, version, entry point).
-- `src/main.lua` — the plugin source, loaded as `StatsExporter.src.main`.
+- `plugins/<PluginName>/` — one self-contained folder per plugin (manifest,
+  `src/`, `resources/`). Deploys to `Plugins/<PluginName>/`, so its
+  `<Package>` entry stays `<PluginName>.src.main`.
+- `common/` — shared Lua code, deployed to `Plugins/Common/` and imported as
+  `import "Common.X"`. See `common/README.md`.
+- `deploy.sh` — copies a plugin (plus `common/`) into the game's `Plugins`
+  folder.
 - `docs/api/` — the official Turbine API reference converted to Markdown, one
   file per type (e.g. `Turbine.Gameplay.Actor.md`) plus namespace overviews and
   a `README.md` index. Use these files as the API reference when implementing
@@ -43,6 +52,17 @@ Both `docs/` subdirectories are documentation only and not needed at runtime.
 
 ## Development
 
-Plugins are Lua scripts executed inside the game client. To test changes, copy
-the plugin directory into the game's `Plugins` folder and reload plugins
-in-game. There is no build step — `src/main.lua` is plain Lua.
+Plugins are Lua scripts executed inside the game client — there is no build
+step. To test changes, deploy a plugin folder into the game's `Plugins`
+directory (`Documents\The Lord of the Rings\Plugins`) and run
+`/plugins refresh` in-game:
+
+```sh
+./deploy.sh StatsExporter "/mnt/c/Users/<you>/Documents/The Lord of the Rings/Plugins"
+```
+
+Or set `LOTRO_PLUGINS` once and just run `./deploy.sh StatsExporter`.
+
+To start a new plugin, create `plugins/<NewName>/` with a `<NewName>.plugin`
+manifest (`<Package>` pointing at `<NewName>.src.main`) and a `src/main.lua`
+entry point.
