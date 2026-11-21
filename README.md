@@ -15,8 +15,22 @@ window ("Character Stats Exporter") on load; `/statsexport` in chat toggles it.
 - **Export Character Stats to File** — collects class, level, morale, power,
   armour, the five attributes (Might, Agility, Vitality, Will, Fate),
   critical/mastery/mitigation ratings, and in/out-of-combat regeneration.
-- **Add Item** / **Export Items to File** — drag an item onto the quickslot,
-  click Add Item to queue it, then Export to save the queued items' info.
+- **Add Item** / **Export Items to File** — two ways to queue items:
+  - *Chat links (rich data)* — link an item in any chat channel (or let a
+    loot message produce a link) and it's captured automatically. The link
+    blob is decoded with `Common.ItemLinkDecode`: instance/generic IDs
+    (`itemIID`/`itemGID`), storage info, bound-to — plus true item level,
+    equip level, armour value, worth, crafter, and LI legacies/relics/stat
+    IDs when the blob carries them. Regular-item stat values are not in
+    the blob; `itemGID` joins to an external item database downstream
+    (see `docs/EXPORT_PIPELINE.md`).
+  - *Quickslot (basic data)* — drag an item onto the slot, click Add Item.
+    Records name, quality/category/durability, description, image IDs,
+    stack info, and shortcut data (the documented API exposes no item
+    stats).
+  
+  Export saves the queue via `PluginData.Save` under `"Items"` and clears
+  it on success.
 
 Note: `PluginData.Save` writes a `.plugindata` file under
 `Documents\The Lord of the Rings\PluginData` containing a serialized **Lua
@@ -52,6 +66,10 @@ files; the saved Lua table is the only export channel available.
   reference (also gitignored). Also includes
   `lotro-lua-plugin-api-songbook3.md`, a community-synthesized API reference
   from the Songbook3 repo covering patterns beyond the official docs.
+- `docs/EXPORT_PIPELINE.md` — end-to-end handoff spec for the downstream
+  project that converts the `.plugindata` exports to JSON: file locations,
+  `.plugindata` format, export schemas, and how to resolve `itemGID` into
+  real item stats via the LotroCompanion item database.
 
 Both `docs/` subdirectories are documentation only and not needed at runtime.
 

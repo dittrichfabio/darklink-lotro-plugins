@@ -5,7 +5,7 @@
 		<Author>DarkLink</Author>
 		<Version>0.0.1</Version>
 		<Description>
-			Saves a JSON file with the stats of your character.
+			Exports character stats and item data via Turbine.PluginData.
 		</Description>
     <Image>StatsExporter/resources/Ring.tga</Image>
 	</Information>

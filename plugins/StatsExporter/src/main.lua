@@ -2,10 +2,19 @@ import "Turbine";
 import "Turbine.UI";
 import "Turbine.UI.Lotro";
 import "Turbine.Gameplay";
+import "Common.ItemLinkDecode";
 
 
 local function print(text)
     Turbine.Shell.WriteLine("<rgb=#00FFFF>StatsExporter:</rgb> "..tostring(text));
+end
+
+-- Imported files scope their globals under the package namespace, so the
+-- decoder lives at Common.ItemLinkDecode.DecodeLinkData, not a bare global.
+local DecodeLinkData = Common and Common.ItemLinkDecode and Common.ItemLinkDecode.DecodeLinkData or nil;
+
+if type(DecodeLinkData) ~= "function" then
+    print("WARNING: Common.ItemLinkDecode failed to provide DecodeLinkData - item links will not decode.");
 end
 
 local function SaveComplete(success, errorMessage)
@@ -46,6 +55,19 @@ local qualityNames = {
     [Turbine.Gameplay.ItemQuality.Legendary]    = "Legendary",
 };
 
+-- Reverse-lookup tables built from the enum tables at load time, so
+-- exported numbers resolve to readable names.
+local function ReverseEnum(enumTable)
+    local names = {};
+    for name, value in pairs(enumTable) do
+        names[value] = name;
+    end
+    return names;
+end
+
+local categoryNames = ReverseEnum(Turbine.Gameplay.ItemCategory);
+local durabilityNames = ReverseEnum(Turbine.Gameplay.ItemDurability);
+
 -- ==== Window ====
 
 local mainWindow = Turbine.UI.Lotro.Window();
@@ -80,21 +102,46 @@ exportItemsButton:SetSize(250, 30);
 
 local pendingItems = {};
 
+local function SlottedShortcut()
+    return itemSlot:GetShortcut();
+end
+
 local function SlottedItem()
-    local shortcut = itemSlot:GetShortcut();
+    local shortcut = SlottedShortcut();
     return shortcut and shortcut:GetItem() or nil;
 end
 
-local function ItemToTable(item)
+-- Records the documented ItemInfo fields plus the image IDs (useful for
+-- downstream icon rendering). The client exposes no item-stat getters —
+-- chat-link records carry itemGID for database lookups instead.
+local function ItemToTable(item, shortcut)
     local info = item:GetItemInfo();
-    return {
+    local entry = {
         Name = info:GetName(),
         Quality = qualityNames[info:GetQuality()] or info:GetQuality(),
-        Category = info:GetCategory(),
+        QualityID = info:GetQuality(),
+        Category = categoryNames[info:GetCategory()] or info:GetCategory(),
+        CategoryID = info:GetCategory(),
         Description = info:GetDescription(),
-        Durability = info:GetDurability(),
+        Durability = durabilityNames[info:GetDurability()] or info:GetDurability(),
         Unique = info:IsUnique(),
+        Magic = info:IsMagic(),
+        IconImageID = info:GetIconImageID(),
+        BackgroundImageID = info:GetBackgroundImageID(),
+        ShadowImageID = info:GetShadowImageID(),
+        UnderlayImageID = info:GetUnderlayImageID(),
+        QualityImageID = info:GetQualityImageID(),
+        MaxQuantity = info:GetMaxQuantity(),
+        MaxStackSize = info:GetMaxStackSize(),
     };
+    if shortcut then
+        entry.ShortcutData = shortcut:GetData();
+    end
+    -- Item-level stack count; present on the live client though Item is
+    -- sparsely documented, so call it defensively.
+    local ok, quantity = pcall(function() return item:GetQuantity(); end);
+    if ok then entry.Quantity = quantity; end
+    return entry;
 end
 
 itemSlot.DragDrop = function(sender, args)
@@ -112,8 +159,48 @@ addItemButton.Click = function(sender, args)
         print("Drop an item onto the slot first.");
         return;
     end
-    table.insert(pendingItems, ItemToTable(item));
-    print("Queued item ("..#pendingItems.." pending)");
+    table.insert(pendingItems, ItemToTable(item, SlottedShortcut()));
+    print("Queued "..item:GetItemInfo():GetName().." ("..#pendingItems.." pending)");
+end
+
+-- ==== Item links ====
+-- Item links sent in chat (<ExamineItemInstance:ItemInfo:...> and
+-- <ExamineIA:IAInfo:...> for legendary items) carry a compressed blob
+-- with the full item record: instance + generic IDs, true item level,
+-- armour value, worth, binding, crafter, and LI legacies/relics/stats.
+-- Link an item in chat (or let loot messages produce one) and it is
+-- captured and queued here. The raw link data is kept too, so data the
+-- decoder doesn't understand yet can be analyzed downstream.
+
+local function QueueLinkedItem(data, bracketedName, isLI)
+    local name = bracketedName:sub(2, -2);
+    local ok, result = pcall(DecodeLinkData, data, isLI);
+    local entry = {
+        Name = name,
+        Source = isLI and "ChatLinkLI" or "ChatLink",
+        LinkData = data,
+    };
+    if ok and result ~= nil then
+        entry.Decoded = result;
+    else
+        entry.DecodeError = ok and "decoder returned nil" or tostring(result);
+    end
+    table.insert(pendingItems, entry);
+    print("Captured item link: "..name.." ("..#pendingItems.." pending)");
+end
+
+Turbine.Chat.Received = function(sender, args)
+    if type(args) ~= "table" or type(args.Message) ~= "string" then
+        return;
+    end
+    for data, name in string.gmatch(args.Message,
+            "<ExamineItemInstance:ItemInfo:(.-)>(%b[])<\\ExamineItemInstance>") do
+        QueueLinkedItem(data, name, false);
+    end
+    for data, name in string.gmatch(args.Message,
+            "<ExamineIA:IAInfo:(.-)>(%b[])<\\ExamineIA>") do
+        QueueLinkedItem(data, name, true);
+    end
 end
 
 exportItemsButton.Click = function(sender, args)
@@ -122,7 +209,15 @@ exportItemsButton.Click = function(sender, args)
         return;
     end
     print("Saving items to file...");
-    Turbine.PluginData.Save(Turbine.DataScope.Character, "Items", pendingItems, SaveComplete);
+    Turbine.PluginData.Save(Turbine.DataScope.Character, "Items", pendingItems,
+        function(success, errorMessage)
+            if success then
+                print("Successfully saved "..#pendingItems.." items!");
+                pendingItems = {};
+            else
+                print("Error saving file: "..tostring(errorMessage));
+            end
+        end);
 end
 
 -- ==== Character stats export ====
@@ -205,6 +300,7 @@ Turbine.Shell.AddCommand("statsexport", toggleCommand);
 
 plugin.Unload = function()
     Turbine.Shell.RemoveCommand(toggleCommand);
+    Turbine.Chat.Received = nil;
     mainWindow:SetVisible(false);
 end
 
