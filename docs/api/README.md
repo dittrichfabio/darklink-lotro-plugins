@@ -2,6 +2,24 @@
 
 Markdown conversion of the official LotRO Lua API docs (`docs/OfficialLuaDocumentation/`). Regenerate with `python3 docs/generate_api_docs.py`.
 
+## Known gaps
+
+These docs mirror the last official documentation set (Update 25 era, "Beta
+Documentation - Subject to change"). Turbine added API methods via release
+notes after that without regenerating the docs, so newer members are missing
+here. Examples confirmed from patch notes:
+
+- `FreePeopleAttributes` regen getters `GetInCombatMoraleRegeneration`,
+  `GetInCombatPowerRegeneration`, `GetOutOfCombatMoraleRegeneration`,
+  `GetOutOfCombatPowerRegeneration` + their `...Changed` events (Update 7, 2012)
+- Bank/Vault/SharedStorage classes, `ItemInfo` (Update 7, 2012)
+- Crafting classes, `WardenAttributes` gambit methods (Update 8, 2012)
+
+Many stat getters added during the later stats rework (crit/mastery/
+mitigation/finesse/healing ratings, block/parry/evade) are likewise absent.
+When a method isn't documented here, verify it exists in-game before relying
+on it.
+
 ## [Turbine](Turbine.md)
 
 - [Turbine.Chat](Turbine.Chat.md) (class)
