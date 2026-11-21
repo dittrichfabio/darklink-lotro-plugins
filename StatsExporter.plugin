@@ -2,7 +2,7 @@
 <Plugin>
 	<Information>
 		<Name>StatsExporter</Name>
-		<Author>ddmdarklink</Author>
+		<Author>DarkLink</Author>
 		<Version>1.0.0</Version>
 		<Description>
 			Saves a JSON file with the stats of your character.

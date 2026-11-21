@@ -1,3 +1,7 @@
+# Documentation HTML sources (regenerable, see docs/generate_api_docs.py)
+docs/OfficialLuaDocumentation/
+docs/OtherReferences/*.html
+
 # Compiled Lua sources
 luac.out
 
