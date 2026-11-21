@@ -1,128 +1,141 @@
-import "Turbine.UI.Lotro"
+import "Turbine";
+import "Turbine.UI";
+import "Turbine.UI.Lotro";
 import "Turbine.Gameplay";
 
 
-
-function GetItemFromID(itemID)
-    if itemID == nil then return end;
-    local function GetHex(IN)
-            local B,K,OUT,I,D=16,"0123456789ABCDEF","",0,0;
-            if IN == 0 or IN == "0" then return "00" end;
-            while IN>0 do
-                    I=I+1
-                    IN,D=math.floor(IN/B),math.mod(IN,B)+1
-                    OUT=string.sub(K,D,D)..OUT
-            end
-            if string.len(OUT)==1 then OUT="0"..OUT end;
-            return OUT
-    end
-    local itemHex = GetHex(itemID);
-    local cItemInspect = Turbine.UI.Lotro.Quickslot();
-    cItemInspect:SetSize(1,1);
-    cItemInspect:SetVisible(false);
-    local function SetItemShortcut()        -- PCALL THIS incase item does not exist
-            cItemInspect:SetShortcut(Turbine.UI.Lotro.Shortcut(Turbine.UI.Lotro.ShortcutType.Item, "0x0,0x" .. itemHex));
-    end
-    if pcall(SetItemShortcut) then
-        SetItemShortcut();
-        local item = cItemInspect:GetShortcut():GetItem();
-        cItemInspect = nil;
-        print(item:GetItemInfo():GetName());
-    else
-        print("nope")
-    end
-    cItemInspect = nil;
+local function print(text)
+    Turbine.Shell.WriteLine("<rgb=#00FFFF>StatsExporter:</rgb> "..tostring(text));
 end
 
+local function SaveComplete(success, errorMessage)
+    if success then
+        print("Successfully saved data!");
+    else
+        print("Error saving file: "..tostring(errorMessage));
+    end
+end
 
-ClassNames = {
+local classNames = {
     [214] = "Beorning",
     [215] = "Brawler",
-    [40] = "Burglar",
-    [24] = "Captain",
+    [40]  = "Burglar",
+    [24]  = "Captain",
     [172] = "Champion",
-    [23] = "Guardian",
+    [23]  = "Guardian",
     [162] = "Hunter",
     [185] = "LoreMaster",
     [216] = "Mariner",
-    [31] = "Minstrel",
+    [31]  = "Minstrel",
     [193] = "RuneKeeper",
     [194] = "Warden",
-    [71] = "Reaver",
+    [71]  = "Reaver",
     [128] = "Defiler",
     [179] = "Blackarrow",
-    [52] = "Warleader",
+    [52]  = "Warleader",
     [127] = "Weaver",
     [126] = "Stalker",
     [192] = "Chicken"
 };
 
-function print(text) Turbine.Shell.WriteLine("<rgb=#00FFFF>StatsExporter:</rgb> "..tostring(text)) end
+local qualityNames = {
+    [Turbine.Gameplay.ItemQuality.Common]       = "Common",
+    [Turbine.Gameplay.ItemQuality.Uncommon]     = "Uncommon",
+    [Turbine.Gameplay.ItemQuality.Rare]         = "Rare",
+    [Turbine.Gameplay.ItemQuality.Incomparable] = "Incomparable",
+    [Turbine.Gameplay.ItemQuality.Legendary]    = "Legendary",
+};
 
-function SaveComplete(success, errorMessage)
-    if not success then
-        print("Error saving file!");
-    else
-        print("Successfully saved data!");
-    end
+-- ==== Window ====
+
+local mainWindow = Turbine.UI.Lotro.Window();
+mainWindow:SetSize(500, 300);
+mainWindow:SetText("Character Stats Exporter");
+
+local exportStatsButton = Turbine.UI.Lotro.Button();
+exportStatsButton:SetParent(mainWindow);
+exportStatsButton:SetText("Export Character Stats to File");
+exportStatsButton:SetPosition(125, 50);
+exportStatsButton:SetSize(250, 30);
+
+local itemSlot = Turbine.UI.Lotro.Quickslot();
+itemSlot:SetParent(mainWindow);
+itemSlot:SetPosition(232, 100);
+itemSlot:SetSize(36, 36);
+itemSlot:SetBackColor(Turbine.UI.Color(0.2, 0.2, 0.2));
+
+local addItemButton = Turbine.UI.Lotro.Button();
+addItemButton:SetParent(mainWindow);
+addItemButton:SetText("Add Item");
+addItemButton:SetPosition(125, 150);
+addItemButton:SetSize(250, 30);
+
+local exportItemsButton = Turbine.UI.Lotro.Button();
+exportItemsButton:SetParent(mainWindow);
+exportItemsButton:SetText("Export Items to File");
+exportItemsButton:SetPosition(125, 200);
+exportItemsButton:SetSize(250, 30);
+
+-- ==== Item export ====
+
+local pendingItems = {};
+
+local function SlottedItem()
+    local shortcut = itemSlot:GetShortcut();
+    return shortcut and shortcut:GetItem() or nil;
 end
 
-MainWindow = Turbine.UI.Lotro.Window();
-MainWindow:SetSize(500, 300);
-MainWindow:SetText("Character Stats Exporter");
-MainWindow:SetVisible(false);
-
-ExportCharStatsButton = Turbine.UI.Lotro.Button();
-ExportCharStatsButton:SetParent(MainWindow);
-ExportCharStatsButton:SetText("Export Character Stats to File");
-ExportCharStatsButton:SetPosition(125, 50);
-ExportCharStatsButton:SetSize(250, 30);
-
-ItemSlot = Turbine.UI.Lotro.Quickslot();
-ItemSlot:SetParent(MainWindow);
-ItemSlot:SetPosition(232, 100);
-ItemSlot:SetSize(36, 36);
-ItemSlot:SetBackColor(Turbine.UI.Color(0.2,0.2,0.2))
-
-AddItemButton = Turbine.UI.Lotro.Button();
-AddItemButton:SetParent(MainWindow);
-AddItemButton:SetText("Add Item");
-AddItemButton:SetPosition(125, 150);
-AddItemButton:SetSize(250, 30);
-
-ExportItemsButton = Turbine.UI.Lotro.Button();
-ExportItemsButton:SetParent(MainWindow);
-ExportItemsButton:SetText("Export Items to File");
-ExportItemsButton:SetPosition(125, 200);
-ExportItemsButton:SetSize(250, 30);
-
-
-ItemSlot.DragDrop = function(sender, args)
-    local shortcut = sender:GetShortcut()
-    local item = shortcut:GetItem()
-    local data = shortcut:GetData()
-    local info = item:GetItemInfo()
-    local name = item:GetName()
-    print(name)
-    print(item)
-    print(info)
-    for k,v in pairs(info) do
-        print(k)
-        print(v)
-    end
+local function ItemToTable(item)
+    local info = item:GetItemInfo();
+    return {
+        Name = info:GetName(),
+        Quality = qualityNames[info:GetQuality()] or info:GetQuality(),
+        Category = info:GetCategory(),
+        Description = info:GetDescription(),
+        Durability = info:GetDurability(),
+        Unique = info:IsUnique(),
+    };
 end
 
+itemSlot.DragDrop = function(sender, args)
+    local item = SlottedItem();
+    if not item then
+        print("Drop a valid item onto the slot.");
+        return;
+    end
+    print("Item: "..item:GetItemInfo():GetName());
+end
 
+addItemButton.Click = function(sender, args)
+    local item = SlottedItem();
+    if not item then
+        print("Drop an item onto the slot first.");
+        return;
+    end
+    table.insert(pendingItems, ItemToTable(item));
+    print("Queued item ("..#pendingItems.." pending)");
+end
 
-function ExportCharStatsButton_Click(sender, args)
+exportItemsButton.Click = function(sender, args)
+    if #pendingItems == 0 then
+        print("No items queued to export.");
+        return;
+    end
+    print("Saving items to file...");
+    Turbine.PluginData.Save(Turbine.DataScope.Character, "Items", pendingItems, SaveComplete);
+end
+
+-- ==== Character stats export ====
+-- Note: several attribute getters used below (crit/mastery/mitigation/
+-- regen/finesse/healing ratings) were added to the API after the last
+-- official docs and are not covered there. They are collected inside a
+-- pcall so a missing getter reports an error instead of failing silently.
+
+local function CollectStats()
     local character = Turbine.Gameplay.LocalPlayer.GetInstance();
     local characterAttributes = character:GetAttributes();
-
-    local originalColor = ExportCharStatsButton:GetForeColor();
-    ExportCharStatsButton:SetForeColor(Turbine.UI.Color.ForestGreen);
-
-    local statsTable = {
-        Class = ClassNames[character:GetClass()],
+    return {
+        Class = classNames[character:GetClass()],
         Level = character:GetLevel(),
         Morale = character:GetMaxMorale(),
         InCombatMoraleRegeneration = characterAttributes:GetInCombatMoraleRegeneration() * 60,
@@ -136,7 +149,6 @@ function ExportCharStatsButton_Click(sender, args)
         Vitality = characterAttributes:GetVitality(),
         Will = characterAttributes:GetWill(),
         Fate = characterAttributes:GetFate(),
-        --CriticalRatingBase = characterAttributes:GetBaseCriticalHitChance(),
         CriticalRatingMelee = characterAttributes:GetMeleeCriticalHitChance(),
         CriticalRatingRange = characterAttributes:GetRangeCriticalHitChance(),
         CriticalRatingTactical = characterAttributes:GetTacticalCriticalHitChance(),
@@ -147,9 +159,6 @@ function ExportCharStatsButton_Click(sender, args)
         OutgoingHealingRating = characterAttributes:GetOutgoingHealing(),
         ResistanceRating = characterAttributes:GetBaseResistance(),
         CriticalDefenceRating = characterAttributes:GetBaseCriticalHitAvoidance(),
-        --CriticalDefenceRatingMelee = characterAttributes:GetMeleeCriticalHitAvoidance(),
-        --CriticalDefenceRatingRange = characterAttributes:GetRangeCriticalHitAvoidance(),
-        --CriticalDefenceRatingTactical = characterAttributes:GetTacticalCriticalHitAvoidance(),
         IncomingHealingRating = characterAttributes:GetIncomingHealing(),
         BlockChanceRating = characterAttributes:GetBlock(),
         PartialBlockChanceRating = characterAttributes:GetBlock(),
@@ -163,11 +172,40 @@ function ExportCharStatsButton_Click(sender, args)
         PhysicalMitigationRating = characterAttributes:GetPhysicalMitigation(),
         TacticalMitigationRating = characterAttributes:GetTacticalMitigation(),
     };
-    print("Saving information to file...")
-    local jsonStats = Turbine.PluginData.Save(Turbine.DataScope.Character, "Stats", statsTable, SaveComplete);
-    ExportCharStatsButton:SetForeColor(originalColor);
 end
 
-ExportCharStatsButton.Click = ExportCharStatsButton_Click;
+exportStatsButton.Click = function(sender, args)
+    local ok, statsTable = pcall(CollectStats);
+    if not ok then
+        print("Failed to collect stats: "..tostring(statsTable));
+        return;
+    end
+    print("Saving information to file...");
+    Turbine.PluginData.Save(Turbine.DataScope.Character, "Stats", statsTable, SaveComplete);
+end
 
-MainWindow:SetVisible(true);
+-- ==== Shell command: /statsexport toggles the window ====
+
+local toggleCommand = Turbine.ShellCommand();
+function toggleCommand:Execute(argumentText)
+    mainWindow:SetVisible(not mainWindow:IsVisible());
+end
+
+function toggleCommand:GetHelp()
+    return "Usage: /statsexport - toggles the Stats Exporter window.";
+end
+
+function toggleCommand:GetShortHelp()
+    return "Toggles the Stats Exporter window.";
+end
+
+Turbine.Shell.AddCommand("statsexport", toggleCommand);
+
+-- ==== Unload cleanup ====
+
+plugin.Unload = function()
+    Turbine.Shell.RemoveCommand(toggleCommand);
+    mainWindow:SetVisible(false);
+end
+
+mainWindow:SetVisible(true);

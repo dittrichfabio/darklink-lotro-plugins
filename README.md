@@ -8,17 +8,20 @@ game's Turbine/Lua API.
 
 ### StatsExporter
 
-Exports your character's combat statistics (and, in progress, items) to JSON
-files via `Turbine.PluginData.Save`. Shows a floating window
-("Character Stats Exporter") with buttons to:
+Exports your character's combat statistics and item info via
+`Turbine.PluginData.Save` (scoped to the current character). Shows a floating
+window ("Character Stats Exporter") on load; `/statsexport` in chat toggles it.
 
 - **Export Character Stats to File** — collects class, level, morale, power,
   armour, the five attributes (Might, Agility, Vitality, Will, Fate),
-  critical/mastery/mitigation ratings, and in/out-of-combat regeneration, then
-  saves them as JSON with `Turbine.PluginData.Save` scoped to the current
-  character.
-- **Export Items to File** — partially implemented. The window includes an item
-  quickslot that accepts dragged items; the export handler is not yet wired up.
+  critical/mastery/mitigation ratings, and in/out-of-combat regeneration.
+- **Add Item** / **Export Items to File** — drag an item onto the quickslot,
+  click Add Item to queue it, then Export to save the queued items' info.
+
+Note: `PluginData.Save` writes a `.plugindata` file under
+`Documents\The Lord of the Rings\PluginData` containing a serialized **Lua
+table** — not JSON. LotRO Lua cannot write arbitrary
+files; the saved Lua table is the only export channel available.
 
 ## Project layout
 
@@ -46,7 +49,9 @@ files via `Turbine.PluginData.Save`. Shows a floating window
   forums thread "Writing LotRO Lua Plugins for Noobs". Covers plugin
   structure, the `.plugin` manifest, UI controls, scrollable windows, timers,
   and general Lua/Turbine tips. The original HTML is kept alongside for
-  reference (also gitignored).
+  reference (also gitignored). Also includes
+  `lotro-lua-plugin-api-songbook3.md`, a community-synthesized API reference
+  from the Songbook3 repo covering patterns beyond the official docs.
 
 Both `docs/` subdirectories are documentation only and not needed at runtime.
 
