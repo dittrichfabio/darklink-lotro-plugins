@@ -47,130 +47,95 @@ local classNames = {
     [192] = "Chicken"
 };
 
-local qualityNames = {
-    [Turbine.Gameplay.ItemQuality.Common]       = "Common",
-    [Turbine.Gameplay.ItemQuality.Uncommon]     = "Uncommon",
-    [Turbine.Gameplay.ItemQuality.Rare]         = "Rare",
-    [Turbine.Gameplay.ItemQuality.Incomparable] = "Incomparable",
-    [Turbine.Gameplay.ItemQuality.Legendary]    = "Legendary",
-};
-
--- Reverse-lookup tables built from the enum tables at load time, so
--- exported numbers resolve to readable names.
-local function ReverseEnum(enumTable)
-    local names = {};
-    for name, value in pairs(enumTable) do
-        names[value] = name;
-    end
-    return names;
-end
-
-local categoryNames = ReverseEnum(Turbine.Gameplay.ItemCategory);
-local durabilityNames = ReverseEnum(Turbine.Gameplay.ItemDurability);
-
 -- ==== Window ====
+-- Two sections: character stats on top, chat-captured items below.
 
 local mainWindow = Turbine.UI.Lotro.Window();
-mainWindow:SetSize(500, 300);
-mainWindow:SetText("Character Stats Exporter");
+mainWindow:SetSize(500, 370);
+mainWindow:SetText("Stats Exporter");
+
+local statsHeader = Turbine.UI.Label();
+statsHeader:SetParent(mainWindow);
+statsHeader:SetPosition(15, 12);
+statsHeader:SetSize(470, 20);
+statsHeader:SetText("Character Stats");
+statsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
 
 local exportStatsButton = Turbine.UI.Lotro.Button();
 exportStatsButton:SetParent(mainWindow);
 exportStatsButton:SetText("Export Character Stats to File");
-exportStatsButton:SetPosition(125, 50);
+exportStatsButton:SetPosition(125, 38);
 exportStatsButton:SetSize(250, 30);
 
-local itemSlot = Turbine.UI.Lotro.Quickslot();
-itemSlot:SetParent(mainWindow);
-itemSlot:SetPosition(232, 100);
-itemSlot:SetSize(36, 36);
-itemSlot:SetBackColor(Turbine.UI.Color(0.2, 0.2, 0.2));
+local itemsHeader = Turbine.UI.Label();
+itemsHeader:SetParent(mainWindow);
+itemsHeader:SetPosition(15, 100);
+itemsHeader:SetSize(470, 20);
+itemsHeader:SetText("Items (chat links)");
+itemsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
 
-local addItemButton = Turbine.UI.Lotro.Button();
-addItemButton:SetParent(mainWindow);
-addItemButton:SetText("Add Item");
-addItemButton:SetPosition(125, 150);
-addItemButton:SetSize(250, 30);
+local startWatchButton = Turbine.UI.Lotro.Button();
+startWatchButton:SetParent(mainWindow);
+startWatchButton:SetText("Start Watching Chat");
+startWatchButton:SetPosition(70, 125);
+startWatchButton:SetSize(175, 30);
+
+local stopWatchButton = Turbine.UI.Lotro.Button();
+stopWatchButton:SetParent(mainWindow);
+stopWatchButton:SetText("Stop Watching Chat");
+stopWatchButton:SetPosition(255, 125);
+stopWatchButton:SetSize(175, 30);
 
 local exportItemsButton = Turbine.UI.Lotro.Button();
 exportItemsButton:SetParent(mainWindow);
 exportItemsButton:SetText("Export Items to File");
-exportItemsButton:SetPosition(125, 200);
+exportItemsButton:SetPosition(125, 170);
 exportItemsButton:SetSize(250, 30);
 
+local itemsStatusLabel = Turbine.UI.Label();
+itemsStatusLabel:SetParent(mainWindow);
+itemsStatusLabel:SetPosition(15, 225);
+itemsStatusLabel:SetSize(470, 40);
+itemsStatusLabel:SetText("");
+
+local hintLabel = Turbine.UI.Label();
+hintLabel:SetParent(mainWindow);
+hintLabel:SetPosition(15, 330);
+hintLabel:SetSize(470, 20);
+hintLabel:SetText("Link items in chat while watching; /statsexport for commands.");
+
 -- ==== Item export ====
+-- Items are captured from chat links only (the Item/ItemInfo API exposes
+-- no stats or usable IDs; the link blob decodes to itemGID + instance
+-- data). Watching is off by default and toggled via the buttons or
+-- /statsexport watch|stop.
 
 local pendingItems = {};
+local watchingChat = false;
 
-local function SlottedShortcut()
-    return itemSlot:GetShortcut();
+local function UpdateItemsStatus()
+    itemsStatusLabel:SetText(
+        (watchingChat and "Watching chat for item links."
+                       or "Chat watching is off.")
+        .." "..#pendingItems.." item(s) queued.");
 end
 
-local function SlottedItem()
-    local shortcut = SlottedShortcut();
-    return shortcut and shortcut:GetItem() or nil;
-end
-
--- Records the documented ItemInfo fields plus the image IDs (useful for
--- downstream icon rendering). The client exposes no item-stat getters —
--- chat-link records carry itemGID for database lookups instead.
-local function ItemToTable(item, shortcut)
-    local info = item:GetItemInfo();
-    local entry = {
-        Name = info:GetName(),
-        Quality = qualityNames[info:GetQuality()] or info:GetQuality(),
-        QualityID = info:GetQuality(),
-        Category = categoryNames[info:GetCategory()] or info:GetCategory(),
-        CategoryID = info:GetCategory(),
-        Description = info:GetDescription(),
-        Durability = durabilityNames[info:GetDurability()] or info:GetDurability(),
-        Unique = info:IsUnique(),
-        Magic = info:IsMagic(),
-        IconImageID = info:GetIconImageID(),
-        BackgroundImageID = info:GetBackgroundImageID(),
-        ShadowImageID = info:GetShadowImageID(),
-        UnderlayImageID = info:GetUnderlayImageID(),
-        QualityImageID = info:GetQualityImageID(),
-        MaxQuantity = info:GetMaxQuantity(),
-        MaxStackSize = info:GetMaxStackSize(),
-    };
-    if shortcut then
-        entry.ShortcutData = shortcut:GetData();
-    end
-    -- Item-level stack count; present on the live client though Item is
-    -- sparsely documented, so call it defensively.
-    local ok, quantity = pcall(function() return item:GetQuantity(); end);
-    if ok then entry.Quantity = quantity; end
-    return entry;
-end
-
-itemSlot.DragDrop = function(sender, args)
-    local item = SlottedItem();
-    if not item then
-        print("Drop a valid item onto the slot.");
-        return;
-    end
-    print("Item: "..item:GetItemInfo():GetName());
-end
-
-addItemButton.Click = function(sender, args)
-    local item = SlottedItem();
-    if not item then
-        print("Drop an item onto the slot first.");
-        return;
-    end
-    table.insert(pendingItems, ItemToTable(item, SlottedShortcut()));
-    print("Queued "..item:GetItemInfo():GetName().." ("..#pendingItems.." pending)");
+local function SetWatching(watch)
+    watchingChat = watch;
+    UpdateItemsStatus();
+    print(watch and "Watching chat for item links."
+                  or "Stopped watching chat.");
 end
 
 -- ==== Item links ====
 -- Item links sent in chat (<ExamineItemInstance:ItemInfo:...> and
 -- <ExamineIA:IAInfo:...> for legendary items) carry a compressed blob
 -- with the full item record: instance + generic IDs, true item level,
--- armour value, worth, binding, crafter, and LI legacies/relics/stats.
--- Link an item in chat (or let loot messages produce one) and it is
--- captured and queued here. The raw link data is kept too, so data the
--- decoder doesn't understand yet can be analyzed downstream.
+-- armour value, worth, binding, crafter, essence slots, and LI
+-- legacies/relics/stats. Link an item in chat (or let loot messages
+-- produce one) and it is captured and queued here. The raw link data is
+-- kept too, so data the decoder doesn't understand yet can be analyzed
+-- downstream.
 
 local function QueueLinkedItem(data, bracketedName, isLI)
     local name = bracketedName:sub(2, -2);
@@ -186,10 +151,14 @@ local function QueueLinkedItem(data, bracketedName, isLI)
         entry.DecodeError = ok and "decoder returned nil" or tostring(result);
     end
     table.insert(pendingItems, entry);
+    UpdateItemsStatus();
     print("Captured item link: "..name.." ("..#pendingItems.." pending)");
 end
 
 Turbine.Chat.Received = function(sender, args)
+    if not watchingChat then
+        return;
+    end
     if type(args) ~= "table" or type(args.Message) ~= "string" then
         return;
     end
@@ -203,7 +172,7 @@ Turbine.Chat.Received = function(sender, args)
     end
 end
 
-exportItemsButton.Click = function(sender, args)
+local function ExportItems()
     if #pendingItems == 0 then
         print("No items queued to export.");
         return;
@@ -214,10 +183,23 @@ exportItemsButton.Click = function(sender, args)
             if success then
                 print("Successfully saved "..#pendingItems.." items!");
                 pendingItems = {};
+                UpdateItemsStatus();
             else
                 print("Error saving file: "..tostring(errorMessage));
             end
         end);
+end
+
+startWatchButton.Click = function(sender, args)
+    SetWatching(true);
+end
+
+stopWatchButton.Click = function(sender, args)
+    SetWatching(false);
+end
+
+exportItemsButton.Click = function(sender, args)
+    ExportItems();
 end
 
 -- ==== Character stats export ====
@@ -269,7 +251,7 @@ local function CollectStats()
     };
 end
 
-exportStatsButton.Click = function(sender, args)
+local function ExportStats()
     local ok, statsTable = pcall(CollectStats);
     if not ok then
         print("Failed to collect stats: "..tostring(statsTable));
@@ -279,19 +261,46 @@ exportStatsButton.Click = function(sender, args)
     Turbine.PluginData.Save(Turbine.DataScope.Character, "Stats", statsTable, SaveComplete);
 end
 
--- ==== Shell command: /statsexport toggles the window ====
+exportStatsButton.Click = function(sender, args)
+    ExportStats();
+end
+
+-- ==== Shell command ====
+-- /statsexport [watch|stop|stats|items|toggle]
+-- No argument toggles the window. Execute may receive the arguments as
+-- its only parameter (documented) or as the second of two parameters
+-- (seen in the wild), so accept both forms.
 
 local toggleCommand = Turbine.ShellCommand();
-function toggleCommand:Execute(argumentText)
-    mainWindow:SetVisible(not mainWindow:IsVisible());
+function toggleCommand:Execute(commandOrArgs, maybeArgs)
+    local arg = string.lower(tostring(maybeArgs or commandOrArgs or ""));
+    arg = arg:gsub("^%s*/?statsexport%s*", "");
+    arg = arg:gsub("^%s+", ""):gsub("%s+$", "");
+    if arg == "" or arg == "toggle" then
+        mainWindow:SetVisible(not mainWindow:IsVisible());
+    elseif arg == "watch" then
+        SetWatching(true);
+    elseif arg == "stop" or arg == "nowatch" then
+        SetWatching(false);
+    elseif arg == "stats" then
+        ExportStats();
+    elseif arg == "items" then
+        ExportItems();
+    else
+        print("Unknown argument '"..arg.."'. Usage: /statsexport [watch|stop|stats|items|toggle]");
+    end
 end
 
 function toggleCommand:GetHelp()
-    return "Usage: /statsexport - toggles the Stats Exporter window.";
+    return "Usage: /statsexport [watch|stop|stats|items|toggle]\n\n"..
+        "watch/stop - start/stop capturing item links from chat\n"..
+        "stats - export character stats to file\n"..
+        "items - export queued items to file\n"..
+        "toggle - show/hide this window (default)";
 end
 
 function toggleCommand:GetShortHelp()
-    return "Toggles the Stats Exporter window.";
+    return "StatsExporter: watch|stop chat links, export stats/items, toggle window.";
 end
 
 Turbine.Shell.AddCommand("statsexport", toggleCommand);
@@ -304,4 +313,5 @@ plugin.Unload = function()
     mainWindow:SetVisible(false);
 end
 
+UpdateItemsStatus();
 mainWindow:SetVisible(true);

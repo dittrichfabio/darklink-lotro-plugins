@@ -10,27 +10,26 @@ game's Turbine/Lua API.
 
 Exports your character's combat statistics and item info via
 `Turbine.PluginData.Save` (scoped to the current character). Shows a floating
-window ("Character Stats Exporter") on load; `/statsexport` in chat toggles it.
+window ("Stats Exporter") on load; `/statsexport` in chat toggles it.
 
-- **Export Character Stats to File** — collects class, level, morale, power,
-  armour, the five attributes (Might, Agility, Vitality, Will, Fate),
-  critical/mastery/mitigation ratings, and in/out-of-combat regeneration.
-- **Add Item** / **Export Items to File** — two ways to queue items:
-  - *Chat links (rich data)* — link an item in any chat channel (or let a
-    loot message produce a link) and it's captured automatically. The link
-    blob is decoded with `Common.ItemLinkDecode`: instance/generic IDs
-    (`itemIID`/`itemGID`), storage info, bound-to — plus true item level,
-    equip level, armour value, worth, crafter, and LI legacies/relics/stat
-    IDs when the blob carries them. Regular-item stat values are not in
-    the blob; `itemGID` joins to an external item database downstream
-    (see `docs/EXPORT_PIPELINE.md`).
-  - *Quickslot (basic data)* — drag an item onto the slot, click Add Item.
-    Records name, quality/category/durability, description, image IDs,
-    stack info, and shortcut data (the documented API exposes no item
-    stats).
-  
-  Export saves the queue via `PluginData.Save` under `"Items"` and clears
-  it on success.
+- **Character Stats** section — "Export Character Stats to File" collects
+  class, level, morale, power, armour, the five attributes (Might, Agility,
+  Vitality, Will, Fate), critical/mastery/mitigation ratings, and
+  in/out-of-combat regeneration.
+- **Items (chat links)** section — watching is off by default; "Start
+  Watching Chat" / "Stop Watching Chat" (or `/statsexport watch|stop`)
+  toggles `Turbine.Chat.Received` capture. While watching, any item link in
+  chat (or produced by a loot message) is decoded with
+  `Common.ItemLinkDecode` and queued: instance/generic IDs (`itemIID`/
+  `itemGID`), storage info, bound-to, essence slots, true item level, equip
+  level, armour value, worth, crafter, and LI legacies/relics/stat IDs when
+  the blob carries them. "Export Items to File" (or `/statsexport items`)
+  saves the queue via `PluginData.Save` under `"Items"` and clears it on
+  success. Regular-item stat values are not in the blob; `itemGID` joins to
+  an external item database downstream (see `docs/EXPORT_PIPELINE.md`).
+
+Commands: `/statsexport` (toggle window), `/statsexport watch|stop`,
+`/statsexport stats`, `/statsexport items`.
 
 Note: `PluginData.Save` writes a `.plugindata` file under
 `Documents\The Lord of the Rings\PluginData` containing a serialized **Lua
