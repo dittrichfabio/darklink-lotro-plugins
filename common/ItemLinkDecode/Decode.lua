@@ -173,10 +173,11 @@ function DecodeLinkData( data, isLI )
 		local header = ins:GetLongLE();
 		local header2 = ins:GetLongLE();
 		if header == nil then
-			Log.Error( "Item Decoding", string.format( "Top level header is nil" ) );
+			Log.Error( "Item Decoding", "Top level header is nil" );
 		elseif header ~= header2 then
-			Log.Error( "Item Decoding", string.format( "Top level headers not matching: %08x - %08x" ) );
-			return nil;
+			Log.Error( "Item Decoding", string.format( "Top level headers not matching: %08x - %08x", header, header2 ) );
+			result.PartialDecode = true;
+			return result;
 		elseif header == 0x100012C5 then 
 			-- extra extra info as another array therein...
 			local nExtras = ins:GetLongLE();
@@ -233,6 +234,28 @@ function DecodeLinkData( data, isLI )
 					result.itemDye = ins:GetLongLE();
 				elseif header == 0x10000570 then -- armour
 					result.itemArmour = ins:GetLongLE();
+				elseif header == 0x10005F0E then -- essence slots
+					-- verified layout: nEssences + per-slot 30-byte records
+					--   0x10005F3D marker, u16 flags (0x0200 seen), header
+					--   pair 0x10005F05, essence GID, header pair 0x10005F3E,
+					--   essence level
+					local nEssences = ins:GetLongLE();
+					local essences = {};
+					for i = 1, nEssences do
+						ins:GetLongLE(); -- 0x10005F3D slot marker
+						ins:Consume(2); -- slot type/flags (unverified)
+						ins:GetLongLE(); ins:GetLongLE(); -- sanity pair
+						local essenceGID = ins:GetLongLE();
+						ins:GetLongLE(); ins:GetLongLE(); -- sanity pair
+						local essenceLevel = ins:GetLongLE();
+						table.insert( essences, { ["GID"] = essenceGID, ["Level"] = essenceLevel } );
+					end
+					result.itemEssences = essences;
+				else
+					-- unknown extra: payload size unknown, stream will
+					-- misalign after this - report the header for mapping
+					Log.Error( "Item Decoding", string.format( "Unknown item extra header: %08x", header ) );
+					result.PartialDecode = true;
 				end
 			end
 		elseif header == 0x10000421 then
