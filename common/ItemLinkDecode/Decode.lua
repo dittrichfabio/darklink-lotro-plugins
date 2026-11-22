@@ -178,12 +178,13 @@ function DecodeLinkData( data, isLI )
 			Log.Error( "Item Decoding", string.format( "Top level headers not matching: %08x - %08x", header, header2 ) );
 			result.PartialDecode = true;
 			return result;
-		elseif header == 0x100012C5 then 
+		elseif header == 0x100012C5 then
 			-- extra extra info as another array therein...
 			local nExtras = ins:GetLongLE();
-			for i = 1, nExtras do 
+			for i = 1, nExtras do
 				local header = ins:GetLongLE();
-				if header == 0x10000E20 then	
+				if header == nil then break end
+				if header == 0x10000E20 then
 					-- crafted by ... 
 					ins:Consume(1);
 					result.itemCraftedBy = DecodeName( ins );
@@ -251,11 +252,16 @@ function DecodeLinkData( data, isLI )
 						table.insert( essences, { ["GID"] = essenceGID, ["Level"] = essenceLevel } );
 					end
 					result.itemEssences = essences;
+				elseif header == 0x1000674A then -- delving/advancement marker, 1-byte payload (semantics unverified)
+					ins:Consume(1);
+				elseif header == 0x1000695C then -- unknown 1-byte flag seen on delving items
+					ins:Consume(1);
 				else
 					-- unknown extra: payload size unknown, stream will
-					-- misalign after this - report the header for mapping
+					-- misalign - report the header for mapping and stop
 					Log.Error( "Item Decoding", string.format( "Unknown item extra header: %08x", header ) );
 					result.PartialDecode = true;
+					break;
 				end
 			end
 		elseif header == 0x10000421 then

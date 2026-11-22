@@ -3,7 +3,7 @@
 	<Information>
 		<Name>StatsExporter</Name>
 		<Author>DarkLink</Author>
-		<Version>0.0.10</Version>
+		<Version>0.0.11</Version>
 		<Description>
 			Exports character stats and item data via Turbine.PluginData.
 		</Description>
