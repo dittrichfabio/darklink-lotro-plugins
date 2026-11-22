@@ -23,13 +23,17 @@ window ("Stats Exporter") on load; `/statsexport` in chat toggles it.
   `Common.ItemLinkDecode` and queued: instance/generic IDs (`itemIID`/
   `itemGID`), storage info, bound-to, essence slots, true item level, equip
   level, armour value, worth, crafter, and LI legacies/relics/stat IDs when
-  the blob carries them. "Export Items to File" (or `/statsexport items`)
-  saves the queue via `PluginData.Save` under `"Items"` and clears it on
-  success. Regular-item stat values are not in the blob; `itemGID` joins to
-  an external item database downstream (see `docs/EXPORT_PIPELINE.md`).
+  the blob carries them. Plain-ID `<Examine:IIDDID:…>` links (vendor/barter
+  stock, generic links) are captured too — their `itemGID` comes straight
+  from the tag, no blob decode needed. "Export Items to File" (or
+  `/statsexport items`) saves the queue via `PluginData.Save` under
+  `"Items"` and clears it on success; "Clear Items Queue" (or
+  `/statsexport clear`) drops it without exporting. Regular-item stat
+  values are not in the blob; `itemGID` joins to an external item database
+  downstream (see `docs/EXPORT_PIPELINE.md`).
 
 Commands: `/statsexport` (toggle window), `/statsexport watch|stop`,
-`/statsexport stats`, `/statsexport items`.
+`/statsexport stats`, `/statsexport items`, `/statsexport clear`.
 
 Note: `PluginData.Save` writes a `.plugindata` file under
 `Documents\The Lord of the Rings\PluginData` containing a serialized **Lua

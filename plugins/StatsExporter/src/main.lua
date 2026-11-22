@@ -51,12 +51,12 @@ local classNames = {
 -- Two sections: character stats on top, chat-captured items below.
 
 local mainWindow = Turbine.UI.Lotro.Window();
-mainWindow:SetSize(500, 370);
+mainWindow:SetSize(500, 390);
 mainWindow:SetText("Stats Exporter");
 
 local statsHeader = Turbine.UI.Label();
 statsHeader:SetParent(mainWindow);
-statsHeader:SetPosition(15, 12);
+statsHeader:SetPosition(15, 32);
 statsHeader:SetSize(470, 20);
 statsHeader:SetText("Character Stats");
 statsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
@@ -64,12 +64,12 @@ statsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
 local exportStatsButton = Turbine.UI.Lotro.Button();
 exportStatsButton:SetParent(mainWindow);
 exportStatsButton:SetText("Export Character Stats to File");
-exportStatsButton:SetPosition(125, 38);
+exportStatsButton:SetPosition(125, 60);
 exportStatsButton:SetSize(250, 30);
 
 local itemsHeader = Turbine.UI.Label();
 itemsHeader:SetParent(mainWindow);
-itemsHeader:SetPosition(15, 100);
+itemsHeader:SetPosition(15, 120);
 itemsHeader:SetSize(470, 20);
 itemsHeader:SetText("Items (chat links)");
 itemsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
@@ -77,30 +77,36 @@ itemsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
 local startWatchButton = Turbine.UI.Lotro.Button();
 startWatchButton:SetParent(mainWindow);
 startWatchButton:SetText("Start Watching Chat");
-startWatchButton:SetPosition(70, 125);
+startWatchButton:SetPosition(70, 145);
 startWatchButton:SetSize(175, 30);
 
 local stopWatchButton = Turbine.UI.Lotro.Button();
 stopWatchButton:SetParent(mainWindow);
 stopWatchButton:SetText("Stop Watching Chat");
-stopWatchButton:SetPosition(255, 125);
+stopWatchButton:SetPosition(255, 145);
 stopWatchButton:SetSize(175, 30);
 
 local exportItemsButton = Turbine.UI.Lotro.Button();
 exportItemsButton:SetParent(mainWindow);
 exportItemsButton:SetText("Export Items to File");
-exportItemsButton:SetPosition(125, 170);
-exportItemsButton:SetSize(250, 30);
+exportItemsButton:SetPosition(50, 190);
+exportItemsButton:SetSize(195, 30);
+
+local clearItemsButton = Turbine.UI.Lotro.Button();
+clearItemsButton:SetParent(mainWindow);
+clearItemsButton:SetText("Clear Items Queue");
+clearItemsButton:SetPosition(255, 190);
+clearItemsButton:SetSize(195, 30);
 
 local itemsStatusLabel = Turbine.UI.Label();
 itemsStatusLabel:SetParent(mainWindow);
-itemsStatusLabel:SetPosition(15, 225);
+itemsStatusLabel:SetPosition(15, 245);
 itemsStatusLabel:SetSize(470, 40);
 itemsStatusLabel:SetText("");
 
 local hintLabel = Turbine.UI.Label();
 hintLabel:SetParent(mainWindow);
-hintLabel:SetPosition(15, 330);
+hintLabel:SetPosition(15, 350);
 hintLabel:SetSize(470, 20);
 hintLabel:SetText("Link items in chat while watching; /statsexport for commands.");
 
@@ -155,6 +161,49 @@ local function QueueLinkedItem(data, bracketedName, isLI)
     print("Captured item link: "..name.." ("..#pendingItems.." pending)");
 end
 
+-- Link IDs in <Examine:IIDDID:...> tags are hex (0x7002B018) or decimal.
+local function ParseLinkID(id)
+    local s = tostring(id);
+    local hex = s:match("^0[xX](%x+)$");
+    if hex then
+        return tonumber(hex, 16);
+    end
+    return tonumber(s);
+end
+
+-- <Examine:IIDDID:uniqueID:genericID>[Name]<\Examine>
+-- Plain-ID link format for items without an item instance - vendor and
+-- barter stock the player does not own, generic links. genericID is the
+-- itemGID itself, so no blob decode is needed; uniqueID is a 64-bit
+-- instance ID (usually 0 for non-owned items) split into the same
+-- IIDLow/IIDHigh pair the blob decoder produces.
+local function QueueExamineLink(uniqueID, genericID, displayText)
+    local name = displayText;
+    if name:sub(1, 1) == "[" and name:sub(-1) == "]" then
+        name = name:sub(2, -2);
+    end
+    local entry = {
+        Name = name,
+        Source = "ChatLinkExamine",
+        LinkData = "Examine:IIDDID:"..tostring(uniqueID)..":"..tostring(genericID),
+        UniqueID = tostring(uniqueID),
+        GenericID = tostring(genericID),
+    };
+    local gid = ParseLinkID(genericID);
+    if gid ~= nil then
+        entry.Decoded = { itemGID = gid };
+        local hex = tostring(uniqueID):match("^0[xX](%x+)$");
+        if hex and #hex <= 16 then
+            hex = string.rep("0", 16 - #hex)..hex;
+            entry.Decoded.itemIIDHigh = tonumber(hex:sub(1, 8), 16);
+            entry.Decoded.itemIIDLow = tonumber(hex:sub(9, 16), 16);
+        end
+    end
+    table.insert(pendingItems, entry);
+    UpdateItemsStatus();
+    print("Captured item link: "..name.." ("..#pendingItems.." pending)");
+end
+
 Turbine.Chat.Received = function(sender, args)
     if not watchingChat then
         return;
@@ -169,6 +218,29 @@ Turbine.Chat.Received = function(sender, args)
     for data, name in string.gmatch(args.Message,
             "<ExamineIA:IAInfo:(.-)>(%b[])<\\ExamineIA>") do
         QueueLinkedItem(data, name, true);
+    end
+    for uniqueID, genericID, displayText in string.gmatch(args.Message,
+            "<Examine:IIDDID:([%w]+):([%w]+)>(.-)<\\Examine>") do
+        QueueExamineLink(uniqueID, genericID, displayText);
+    end
+    -- Surface any other <Examine...> link formats we do not handle yet,
+    -- so new link types (e.g. vendor/barter items) can be identified.
+    for tag in string.gmatch(args.Message, "<(Examine[^>]*)>") do
+        if not (tag:sub(1, 20) == "ExamineItemInstance:"
+                or tag:sub(1, 10) == "ExamineIA:"
+                or tag:sub(1, 15) == "Examine:IIDDID:") then
+            print("Unhandled item link tag: <"..tag..">");
+        end
+    end
+end
+
+local function ClearItems()
+    if #pendingItems == 0 then
+        print("Item queue is already empty.");
+    else
+        pendingItems = {};
+        UpdateItemsStatus();
+        print("Item queue cleared.");
     end
 end
 
@@ -200,6 +272,10 @@ end
 
 exportItemsButton.Click = function(sender, args)
     ExportItems();
+end
+
+clearItemsButton.Click = function(sender, args)
+    ClearItems();
 end
 
 -- ==== Character stats export ====
@@ -286,16 +362,19 @@ function toggleCommand:Execute(commandOrArgs, maybeArgs)
         ExportStats();
     elseif arg == "items" then
         ExportItems();
+    elseif arg == "clear" then
+        ClearItems();
     else
-        print("Unknown argument '"..arg.."'. Usage: /statsexport [watch|stop|stats|items|toggle]");
+        print("Unknown argument '"..arg.."'. Usage: /statsexport [watch|stop|stats|items|clear|toggle]");
     end
 end
 
 function toggleCommand:GetHelp()
-    return "Usage: /statsexport [watch|stop|stats|items|toggle]\n\n"..
+    return "Usage: /statsexport [watch|stop|stats|items|clear|toggle]\n\n"..
         "watch/stop - start/stop capturing item links from chat\n"..
         "stats - export character stats to file\n"..
         "items - export queued items to file\n"..
+        "clear - empty the item queue without exporting\n"..
         "toggle - show/hide this window (default)";
 end
 
