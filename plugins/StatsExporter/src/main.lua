@@ -17,11 +17,15 @@ if type(DecodeLinkData) ~= "function" then
     print("WARNING: Common.ItemLinkDecode failed to provide DecodeLinkData - item links will not decode.");
 end
 
-local function SaveComplete(success, errorMessage)
-    if success then
-        print("Successfully saved data!");
-    else
-        print("Error saving file: "..tostring(errorMessage));
+-- Manifest of .plugindata filenames this plugin has saved. PluginData.Load
+-- is synchronous while the plugin is loading, so this resolves instantly
+-- here; at runtime the same call is delayed by seconds, which is why the
+-- overwrite check consults this list before probing (see RequestSave).
+local knownFiles = {};
+local manifestData = Turbine.PluginData.Load(Turbine.DataScope.Character, "StatsExporter_SavedFiles");
+if type(manifestData) == "table" and type(manifestData.Files) == "table" then
+    for _, n in ipairs(manifestData.Files) do
+        knownFiles[n] = true;
     end
 end
 
@@ -67,12 +71,38 @@ exportStatsButton:SetText("Export Character Stats to File");
 exportStatsButton:SetPosition(125, 60);
 exportStatsButton:SetSize(250, 30);
 
+local statsFileLabel = Turbine.UI.Label();
+statsFileLabel:SetParent(mainWindow);
+statsFileLabel:SetPosition(190, 32);
+statsFileLabel:SetSize(55, 20);
+statsFileLabel:SetText("File:");
+statsFileLabel:SetFontStyle(Turbine.UI.FontStyle.Outline);
+
+local statsFileBox = Turbine.UI.Lotro.TextBox();
+statsFileBox:SetParent(mainWindow);
+statsFileBox:SetPosition(250, 30);
+statsFileBox:SetSize(235, 24);
+statsFileBox:SetText("Stats");
+
 local itemsHeader = Turbine.UI.Label();
 itemsHeader:SetParent(mainWindow);
 itemsHeader:SetPosition(15, 120);
 itemsHeader:SetSize(470, 20);
 itemsHeader:SetText("Items (chat links)");
 itemsHeader:SetFontStyle(Turbine.UI.FontStyle.Outline);
+
+local itemsFileLabel = Turbine.UI.Label();
+itemsFileLabel:SetParent(mainWindow);
+itemsFileLabel:SetPosition(190, 120);
+itemsFileLabel:SetSize(55, 20);
+itemsFileLabel:SetText("File:");
+itemsFileLabel:SetFontStyle(Turbine.UI.FontStyle.Outline);
+
+local itemsFileBox = Turbine.UI.Lotro.TextBox();
+itemsFileBox:SetParent(mainWindow);
+itemsFileBox:SetPosition(250, 118);
+itemsFileBox:SetSize(235, 24);
+itemsFileBox:SetText("Items");
 
 local startWatchButton = Turbine.UI.Lotro.Button();
 startWatchButton:SetParent(mainWindow);
@@ -109,6 +139,43 @@ hintLabel:SetParent(mainWindow);
 hintLabel:SetPosition(15, 350);
 hintLabel:SetSize(470, 20);
 hintLabel:SetText("Link items in chat while watching; /statsexport for commands.");
+
+-- Overwrite confirmation dialog, shown when the target .plugindata file
+-- already exists. Centered over the main window when displayed.
+local overwriteWindow = Turbine.UI.Lotro.Window();
+overwriteWindow:SetSize(420, 130);
+overwriteWindow:SetText("Overwrite File?");
+overwriteWindow:SetVisible(false);
+
+local overwriteFileLabel1 = Turbine.UI.Label();
+overwriteFileLabel1:SetParent(overwriteWindow);
+overwriteFileLabel1:SetPosition(15, 30);
+overwriteFileLabel1:SetSize(390, 20);
+overwriteFileLabel1:SetText("");
+
+local overwriteFileLabel2 = Turbine.UI.Label();
+overwriteFileLabel2:SetParent(overwriteWindow);
+overwriteFileLabel2:SetPosition(15, 50);
+overwriteFileLabel2:SetSize(390, 20);
+overwriteFileLabel2:SetText("");
+
+local overwriteQuestionLabel = Turbine.UI.Label();
+overwriteQuestionLabel:SetParent(overwriteWindow);
+overwriteQuestionLabel:SetPosition(15, 72);
+overwriteQuestionLabel:SetSize(390, 20);
+overwriteQuestionLabel:SetText("already exists. Overwrite it?");
+
+local overwriteYesButton = Turbine.UI.Lotro.Button();
+overwriteYesButton:SetParent(overwriteWindow);
+overwriteYesButton:SetText("Yes, Overwrite");
+overwriteYesButton:SetPosition(70, 98);
+overwriteYesButton:SetSize(140, 28);
+
+local overwriteNoButton = Turbine.UI.Lotro.Button();
+overwriteNoButton:SetParent(overwriteWindow);
+overwriteNoButton:SetText("Cancel");
+overwriteNoButton:SetPosition(230, 98);
+overwriteNoButton:SetSize(140, 28);
 
 -- ==== Item export ====
 -- Items are captured from chat links only (the Item/ItemInfo API exposes
@@ -244,22 +311,134 @@ local function ClearItems()
     end
 end
 
+-- ==== File saving ====
+-- Exports write .plugindata files named by the per-section text boxes.
+-- PluginData keys are capped at 63 characters and reject some
+-- characters, so input is sanitized; anything outside [A-Za-z0-9-_.]
+-- (including spaces) becomes an underscore.
+
+local function SanitizeFilename(raw, defaultName)
+    local name = tostring(raw or ""):gsub("^%s+", ""):gsub("%s+$", "");
+    if name:lower():sub(-11) == ".plugindata" then
+        name = name:sub(1, -12);
+    end
+    name = name:gsub("[^%w%-%._]", "_");
+    name = name:gsub("_+", "_"):gsub("^[%.]+", ""):gsub("[%.]+$", "");
+    name = name:gsub("^_+", ""):gsub("_+$", "");
+    if name == "" then
+        name = defaultName;
+    end
+    if #name > 63 then
+        name = name:sub(1, 63);
+    end
+    return name;
+end
+
+local pendingSave = nil;      -- overwrite confirmed, waiting for dialog choice
+local saveCheckPending = nil; -- PluginData.Load probe in flight
+
+local function SetExportButtonsEnabled(enabled)
+    exportStatsButton:SetEnabled(enabled);
+    exportItemsButton:SetEnabled(enabled);
+end
+
+local function SavePlugindata(name, data, onSaved)
+    print("Saving '"..name..".plugindata' to file...");
+    Turbine.PluginData.Save(Turbine.DataScope.Character, name, data,
+        function(success, errorMessage)
+            SetExportButtonsEnabled(true);
+            if success then
+                if not knownFiles[name] then
+                    knownFiles[name] = true;
+                    local list = {};
+                    for n in pairs(knownFiles) do
+                        table.insert(list, n);
+                    end
+                    Turbine.PluginData.Save(Turbine.DataScope.Character,
+                        "StatsExporter_SavedFiles", { Files = list });
+                end
+                onSaved();
+            else
+                print("Error saving file: "..tostring(errorMessage));
+            end
+        end);
+end
+
+local function ShowOverwriteDialog(name)
+    -- Split "name.plugindata" across two lines so long filenames stay
+    -- inside the dialog instead of overflowing the label bounds.
+    local displayName = "\""..name..".plugindata\"";
+    local line1 = displayName:sub(1, 44);
+    local line2 = displayName:sub(45);
+    overwriteFileLabel1:SetText(line1);
+    overwriteFileLabel2:SetText(line2);
+    local wx, wy = mainWindow:GetPosition();
+    overwriteWindow:SetPosition(wx + 40, wy + 130);
+    overwriteWindow:SetZOrder(1000);
+    overwriteWindow:SetVisible(true);
+end
+
+local function FinishSaveCheck(exists)
+    local pending = saveCheckPending;
+    if pending == nil then
+        return;
+    end
+    saveCheckPending = nil;
+    mainWindow:SetWantsUpdates(false);
+    if exists then
+        pendingSave = pending;
+        ShowOverwriteDialog(pending.name);
+    else
+        SavePlugindata(pending.name, pending.data, pending.onSaved);
+    end
+end
+
+-- Checks whether <name>.plugindata already exists before saving. Names in
+-- the saved-files manifest are known to exist, so they prompt immediately.
+-- Unknown names are probed with PluginData.Load, which at runtime returns
+-- nil immediately and reports through the callback after Turbine's built-in
+-- multi-second delay (observed >5s). A missing file may not invoke the
+-- callback on every client version, so a tick timeout in mainWindow.Update
+-- forces a decision either way.
+local function RequestSave(name, data, onSaved)
+    if saveCheckPending ~= nil or pendingSave ~= nil then
+        print("Another export is still in progress; please wait.");
+        return;
+    end
+    print("Exporting to '"..name..".plugindata'...");
+    SetExportButtonsEnabled(false);
+    if knownFiles[name] then
+        pendingSave = { name = name, data = data, onSaved = onSaved };
+        ShowOverwriteDialog(name);
+        return;
+    end
+    saveCheckPending = { name = name, data = data, onSaved = onSaved, ticks = 0 };
+    mainWindow:SetWantsUpdates(true);
+    local ok, immediate = pcall(Turbine.PluginData.Load,
+        Turbine.DataScope.Character, name,
+        function(loaded)
+            FinishSaveCheck(loaded ~= nil);
+        end);
+    if not ok then
+        print("Could not check for an existing file: "..tostring(immediate));
+        FinishSaveCheck(false);
+    elseif immediate ~= nil then
+        FinishSaveCheck(true);
+    end
+end
+
 local function ExportItems()
     if #pendingItems == 0 then
         print("No items queued to export.");
         return;
     end
-    print("Saving items to file...");
-    Turbine.PluginData.Save(Turbine.DataScope.Character, "Items", pendingItems,
-        function(success, errorMessage)
-            if success then
-                print("Successfully saved "..#pendingItems.." items!");
-                pendingItems = {};
-                UpdateItemsStatus();
-            else
-                print("Error saving file: "..tostring(errorMessage));
-            end
-        end);
+    local name = SanitizeFilename(itemsFileBox:GetText(), "Items");
+    local data = pendingItems;
+    RequestSave(name, data, function()
+        pendingItems = {};
+        UpdateItemsStatus();
+        print("Successfully saved "..#data.." items to '"..name..".plugindata'!");
+    end);
 end
 
 startWatchButton.Click = function(sender, args)
@@ -333,12 +512,48 @@ local function ExportStats()
         print("Failed to collect stats: "..tostring(statsTable));
         return;
     end
-    print("Saving information to file...");
-    Turbine.PluginData.Save(Turbine.DataScope.Character, "Stats", statsTable, SaveComplete);
+    local name = SanitizeFilename(statsFileBox:GetText(), "Stats");
+    RequestSave(name, statsTable, function()
+        print("Successfully saved character stats to '"..name..".plugindata'!");
+    end);
 end
 
 exportStatsButton.Click = function(sender, args)
     ExportStats();
+end
+
+overwriteYesButton.Click = function(sender, args)
+    local pending = pendingSave;
+    pendingSave = nil;
+    overwriteWindow:SetVisible(false);
+    if pending ~= nil then
+        SavePlugindata(pending.name, pending.data, pending.onSaved);
+    end
+end
+
+overwriteNoButton.Click = function(sender, args)
+    pendingSave = nil;
+    overwriteWindow:SetVisible(false);
+    SetExportButtonsEnabled(true);
+    print("Export cancelled; existing file kept.");
+end
+
+-- Failsafe for the PluginData.Load existence probe: if the load callback
+-- never fires (possible for missing files on some client versions), the
+-- pending check is resolved as "does not exist" after ~2400 update ticks
+-- (~40s at 60fps). The observed PluginData delay exceeded 300 ticks, so
+-- this must stay well above it.
+mainWindow.Update = function(sender, args)
+    local pending = saveCheckPending;
+    if pending == nil then
+        mainWindow:SetWantsUpdates(false);
+        return;
+    end
+    pending.ticks = pending.ticks + 1;
+    if pending.ticks > 2400 then
+        print("Timed out checking for an existing file; saving anyway.");
+        FinishSaveCheck(false);
+    end
 end
 
 -- ==== Shell command ====
@@ -390,6 +605,7 @@ plugin.Unload = function()
     Turbine.Shell.RemoveCommand(toggleCommand);
     Turbine.Chat.Received = nil;
     mainWindow:SetVisible(false);
+    overwriteWindow:SetVisible(false);
 end
 
 UpdateItemsStatus();

@@ -57,6 +57,7 @@ liMaxHit		- max hit of melee damage range, in single precision floating point fo
 
 -- unpack is not guaranteed to exist in LOTRO's sandboxed Lua
 local function unpackList( t, i, j )
+	if t == nil then return; end
 	i = i or 1;
 	j = j or #t;
 	if i > j then return; end
@@ -78,6 +79,9 @@ end
 function DecodeLinkData( data, isLI )
 	-- Unencode and uncompress the data
 	local decodedTable = TurbineUTF8Binary.Decode( data );
+	if type( decodedTable ) ~= "table" then
+		return nil;
+	end
 	local deflatedDataAsString = string.char( _unpack( decodedTable ) );
 	deflatedDataAsString = string.sub( deflatedDataAsString, - ( string.len( deflatedDataAsString ) - 8 ) );
 	local inflatedData = Zlib.Inflate( deflatedDataAsString );

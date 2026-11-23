@@ -26,11 +26,18 @@ window ("Stats Exporter") on load; `/statsexport` in chat toggles it.
   the blob carries them. Plain-ID `<Examine:IIDDID:…>` links (vendor/barter
   stock, generic links) are captured too — their `itemGID` comes straight
   from the tag, no blob decode needed. "Export Items to File" (or
-  `/statsexport items`) saves the queue via `PluginData.Save` under
-  `"Items"` and clears it on success; "Clear Items Queue" (or
-  `/statsexport clear`) drops it without exporting. Regular-item stat
-  values are not in the blob; `itemGID` joins to an external item database
-  downstream (see `docs/EXPORT_PIPELINE.md`).
+  `/statsexport items`) saves the queue via `PluginData.Save` and clears it
+  on success; "Clear Items Queue" (or `/statsexport clear`) drops it
+  without exporting. Regular-item stat values are not in the blob;
+  `itemGID` joins to an external item database downstream (see
+  `docs/EXPORT_PIPELINE.md`).
+
+Each section has a **File:** text box (pre-filled `Stats` / `Items`) that
+sets the `.plugindata` filename. Names are sanitized to PluginData key
+rules — invalid characters and spaces become `_`, max 63 chars, a stray
+`.plugindata` suffix is stripped. Before saving, the plugin checks whether
+the target file already exists (`PluginData.Load`) and shows an
+"Overwrite File?" confirmation dialog if it does.
 
 Commands: `/statsexport` (toggle window), `/statsexport watch|stop`,
 `/statsexport stats`, `/statsexport items`, `/statsexport clear`.
